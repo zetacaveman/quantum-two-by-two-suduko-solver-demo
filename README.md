@@ -1,11 +1,10 @@
-# QuantumSubsetSumSolver
+# Quantum Subset Sum Demo
 
 Educational Qiskit demos for solving small Subset Sum instances with Grover's
 algorithm.
 
-This repository is currently being prepared to move from an older Sudoku-demo
-name to `QuantumSubsetSumSolver`. The code and notebooks here now focus on
-Subset Sum, not Sudoku.
+The code and notebooks here focus on Subset Sum, not the older Sudoku demo that
+used to live in this repository.
 
 The core problem is:
 
@@ -20,6 +19,27 @@ The selector bit `x_i` means whether the number `a_i` is included in the
 subset. Grover search prepares a superposition over all selector bitstrings,
 marks the bitstrings whose weighted sum equals the target, and amplifies the
 marked states.
+
+## Two Demo Tracks
+
+This repository has two related but different demo tracks:
+
+1. **High-level `WeightedAdder` demo**
+   - Main file: `subset_sum_grover_weighted_adder.ipynb`
+   - Uses Qiskit's `WeightedAdder` to compute the subset sum.
+   - Best starting point for understanding the Grover workflow.
+   - The arithmetic is correct but mostly hidden inside Qiskit's library.
+   - It can be used to explain the code in `quantum_subset_sum_weighted_adder.py`.
+
+2. **Based on the paper**
+   - Main file: `subset_sum_grover_based_on_paper.ipynb`
+   - Follows the outline of a lower-level construction from the referenced
+     paper (https://arxiv.org/pdf/2410.01775).
+   - Better for studying how the arithmetic/oracle might be built explicitly.
+   - More exploratory and less polished than the `WeightedAdder` notebook. Note the paper already has it own repo at `ABenoit0226/quantum-place-route`.
+
+The Python script is a reusable helper / smoke-test version of the
+`WeightedAdder` approach. It is not the primary tutorial demo.
 
 ## Files
 
@@ -68,14 +88,35 @@ qubits remain entangled with arithmetic workspace.
 python -m pip install -r requirements.txt
 ```
 
-## Run the Python Demo
+## Run the Notebook Demos
+
+Recommended starting point:
+
+```bash
+jupyter notebook subset_sum_grover_weighted_adder.ipynb
+```
+
+Notebook based on the paper:
+
+```bash
+jupyter notebook subset_sum_grover_based_on_paper.ipynb
+```
+
+Introductory notebook:
+
+```bash
+jupyter notebook subset_sum_grover_demo.ipynb
+```
+
+## Run the Python Helper
 
 ```bash
 python quantum_subset_sum_weighted_adder.py
 ```
 
 The script tries a few small examples and prints the result returned by
-`quantum_subset_sum`.
+`quantum_subset_sum`. Treat this as a quick command-line check and reusable
+implementation, not the main explanatory demo.
 
 ## Use the Helper Function
 
@@ -99,9 +140,6 @@ The result includes:
 
 This is a small bootcamp-style project. The `WeightedAdder` version is useful
 for explaining the algorithm without hand-building the reversible arithmetic.
-The notebook based on the paper is a better place to explore lower-level oracle
+The notebook based on the paper is where we explore lower-level oracle
 construction.
 
-The paper authors also provide a public repository with relevant code:
-`ABenoit0226/quantum-place-route`. This project is only an educational
-exploration of the steps and does not claim originality over that work.
