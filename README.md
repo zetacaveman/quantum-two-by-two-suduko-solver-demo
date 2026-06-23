@@ -145,3 +145,8 @@ for explaining the algorithm without hand-building the reversible arithmetic.
 The notebook based on the paper is where we explore lower-level oracle
 construction.
 
+## TODO
+finish based_on_paper notebook. Also add another one using quantum phase transition to solve.
+
+
+
