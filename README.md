@@ -77,7 +77,7 @@ The weighted-adder Grover oracle follows this pattern:
 3. Phase-flip states whose sum register equals target.
 4. Uncompute the WeightedAdder so workspace qubits return to |0>.
 5. Apply the Grover diffuser to selector qubits only.
-6. Measure selector qubits and decode the subset.
+6. Use `Statevector` outside the circuit to read selector probabilities.
 ```
 
 The important reversible-computing step is uncomputation. The sum register and
@@ -125,7 +125,7 @@ implementation, not the main explanatory demo.
 ```python
 from quantum_subset_sum_weighted_adder import quantum_subset_sum
 
-result = quantum_subset_sum([1, 2, 3], 3, shots=2000, verbose=True)
+result = quantum_subset_sum([1, 2, 3], 3, verbose=True)
 print(result)
 ```
 
@@ -134,6 +134,7 @@ The result includes:
 - the subset indices found
 - the selector bits
 - the total
+- the Statevector probability for the selected bitstring
 - status, such as `found`, `found_by_classical_fallback`, or
   `no_solution_certified`
 - the Grover iteration count when applicable

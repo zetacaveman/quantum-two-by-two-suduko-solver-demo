@@ -4,9 +4,9 @@ from dataclasses import dataclass
 from itertools import product
 from math import ceil, pi, sqrt
 
-from qiskit import ClassicalRegister, QuantumCircuit, transpile
+from qiskit import QuantumCircuit
 from qiskit.circuit.library import WeightedAdder
-from qiskit_aer import AerSimulator
+from qiskit.quantum_info import Statevector
 
 
 @dataclass(frozen=True)
@@ -17,8 +17,8 @@ class SubsetSumResult:
     bits: tuple[int, ...] | None
     total: int | None
     status: str
+    probability: float | None = None
     grover_iterations: int | None = None
-    shots: int = 0
 
 
 def little_endian_bits(value: int, width: int) -> list[int]:
@@ -91,25 +91,12 @@ def diffusion_operator(n: int, total_qubits: int) -> QuantumCircuit:
     if n == 1:
         qc.z(selector[0])
     else:
-        qc.h(selector[-1])
-        qc.mcx(selector[:-1], selector[-1])
-        qc.h(selector[-1])
+        qc.mcp(pi, selector[:-1], selector[-1])
 
     qc.x(selector)
     qc.h(selector)
 
     return qc
-
-
-def decode_qiskit_key(key: str, n: int) -> tuple[int, ...]:
-    """
-    Convert Qiskit's displayed count key into selector-bit order.
-
-    We measure selector qubit i into classical bit i, while Qiskit prints the
-    highest classical bit on the left. Reversing gives (b_0, b_1, ...).
-    """
-    compact = key.replace(" ", "")
-    return tuple(int(bit) for bit in compact[::-1][:n])
 
 
 def subset_from_bits(bits: tuple[int, ...]) -> set[int]:
@@ -129,8 +116,9 @@ def exact_subset_sum(xs: list[int], target: int) -> set[int] | None:
     """
     Deterministic exhaustive checker.
 
-    This is practical for the bootcamp requirement n <= 4. It is also useful as
-    a verifier when the quantum sampling routine returns no candidate.
+    This is practical for the bootcamp requirement n <= 4. It is not used to
+    build the oracle; it only certifies small no-solution cases outside the
+    quantum circuit.
     """
     for bits in product([0, 1], repeat=len(xs)):
         subset = subset_from_bits(tuple(bits))
@@ -143,9 +131,8 @@ def build_grover_circuit(
     xs: list[int],
     target: int,
     grover_iterations: int,
-    measure: bool = True,
 ) -> QuantumCircuit:
-    """Build the weighted-adder Grover circuit for a fixed iteration count."""
+    """Build the weighted-adder Grover circuit with no measurements."""
     n = len(xs)
     oracle = subset_sum_oracle_weighted_adder(xs, target).to_gate()
     total_qubits = oracle.num_qubits
@@ -158,19 +145,32 @@ def build_grover_circuit(
         qc.append(oracle, range(total_qubits))
         qc.append(diffusion, range(total_qubits))
 
-    if measure:
-        classical = ClassicalRegister(n, "c")
-        qc.add_register(classical)
-        for i in range(n):
-            qc.measure(i, classical[i])
-
     return qc
+
+
+def selector_probabilities(statevector: Statevector, n: int) -> dict[tuple[int, ...], float]:
+    """Marginalize full statevector probabilities onto selector qubits."""
+    probabilities: dict[tuple[int, ...], float] = {}
+    for basis_index, probability in enumerate(statevector.probabilities()):
+        bits = tuple((basis_index >> i) & 1 for i in range(n))
+        probabilities[bits] = probabilities.get(bits, 0.0) + float(probability)
+    return probabilities
+
+
+def ranked_selector_probabilities(
+    circuit: QuantumCircuit, n: int
+) -> list[tuple[tuple[int, ...], float]]:
+    """Run Statevector outside the circuit and rank selector outcomes."""
+    if circuit.num_clbits != 0:
+        raise ValueError("The algorithmic circuit must not contain classical bits.")
+    statevector = Statevector.from_instruction(circuit)
+    probabilities = selector_probabilities(statevector, n)
+    return sorted(probabilities.items(), key=lambda item: item[1], reverse=True)
 
 
 def quantum_subset_sum(
     xs: list[int],
     target: int,
-    shots: int = 2000,
     max_rounds: int | None = None,
     include_zero_iteration: bool = False,
     certify_small_no_solution: bool = True,
@@ -179,26 +179,9 @@ def quantum_subset_sum(
     """
     Try to solve subset sum with Grover search and a WeightedAdder oracle.
 
-    Args:
-        xs: positive integers [x_0, x_1, ..., x_{n-1}].
-        target: target sum t.
-        shots: samples per Grover iteration count.
-        max_rounds: largest Grover iteration count to try. If None, use
-            ceil((pi / 4) * sqrt(2^n)) + 1.
-        include_zero_iteration: also test r = 0, which is just uniform random
-            sampling before any Grover amplification.
-        certify_small_no_solution: for n <= 20, do a classical exhaustive check
-            before returning "no_solution_certified". For the bootcamp n <= 4
-            requirement this makes the no-solution answer exact.
-        verbose: print diagnostics.
-
-    Returns:
-        SubsetSumResult. If result.subset is not None, then
-        sum(xs[i] for i in result.subset) == target.
-
-    Notes:
-        Without the optional exhaustive check, failure to observe a valid subset
-        means "not found with the chosen shots/rounds", not a proof.
+    The algorithmic circuit contains no classical bits and no measurements.
+    Statevector simulation is used outside the circuit to inspect selector
+    probabilities for this small educational demo.
     """
     if not isinstance(target, int):
         raise TypeError("target must be an integer")
@@ -206,18 +189,16 @@ def quantum_subset_sum(
         raise TypeError("all xs values must be integers")
     if any(x <= 0 for x in xs):
         raise ValueError("this implementation expects positive integers")
-    if shots <= 0:
-        raise ValueError("shots must be positive")
 
     if target < 0:
-        return SubsetSumResult(None, None, None, "no_solution_certified", shots=0)
+        return SubsetSumResult(None, None, None, "no_solution_certified")
     xs = [int(x) for x in xs]
     if target == 0:
-        return SubsetSumResult(set(), tuple(0 for _ in xs), 0, "found", 0, shots=0)
+        return SubsetSumResult(set(), tuple(0 for _ in xs), 0, "found", 1.0, 0)
     if not xs:
-        return SubsetSumResult(None, None, None, "no_solution_certified", shots=0)
+        return SubsetSumResult(None, None, None, "no_solution_certified")
     if target > sum(xs):
-        return SubsetSumResult(None, None, None, "no_solution_certified", shots=0)
+        return SubsetSumResult(None, None, None, "no_solution_certified")
 
     n = len(xs)
     if max_rounds is None:
@@ -225,7 +206,6 @@ def quantum_subset_sum(
     if max_rounds < 0:
         raise ValueError("max_rounds must be nonnegative")
 
-    simulator = AerSimulator()
     first_round = 0 if include_zero_iteration else 1
     if max_rounds < first_round:
         max_rounds = first_round
@@ -233,23 +213,16 @@ def quantum_subset_sum(
     if verbose:
         print("xs =", xs)
         print("target =", target)
-        print("shots =", shots)
         print(f"trying Grover iterations {first_round}..", max_rounds)
 
     for grover_iterations in range(first_round, max_rounds + 1):
-        qc = build_grover_circuit(xs, target, grover_iterations, measure=True)
-
-        # Aer cannot directly run custom gates such as SubsetSumOracle.
-        compiled_qc = transpile(qc, simulator)
-        result = simulator.run(compiled_qc, shots=shots).result()
-        counts = result.get_counts()
-        ranked = sorted(counts.items(), key=lambda item: item[1], reverse=True)
+        circuit = build_grover_circuit(xs, target, grover_iterations)
+        ranked = ranked_selector_probabilities(circuit, n)
 
         if verbose:
             print(f"r = {grover_iterations}, top outcomes = {ranked[:5]}")
 
-        for key, _count in ranked:
-            bits = decode_qiskit_key(key, n)
+        for bits, probability in ranked[: min(8, len(ranked))]:
             subset = subset_from_bits(bits)
             total = subset_total(xs, subset)
             if total == target:
@@ -258,8 +231,8 @@ def quantum_subset_sum(
                     bits=bits,
                     total=total,
                     status="found",
+                    probability=probability,
                     grover_iterations=grover_iterations,
-                    shots=shots,
                 )
 
     if certify_small_no_solution and n <= 20:
@@ -271,16 +244,16 @@ def quantum_subset_sum(
                 bits=bits,
                 total=subset_total(xs, exact),
                 status="found_by_classical_fallback",
+                probability=None,
                 grover_iterations=None,
-                shots=shots * (max_rounds - first_round + 1),
             )
         return SubsetSumResult(
             subset=None,
             bits=None,
             total=None,
             status="no_solution_certified",
+            probability=None,
             grover_iterations=None,
-            shots=shots * (max_rounds - first_round + 1),
         )
 
     return SubsetSumResult(
@@ -288,8 +261,8 @@ def quantum_subset_sum(
         bits=None,
         total=None,
         status="not_found_probabilistic",
+        probability=None,
         grover_iterations=None,
-        shots=shots * (max_rounds - first_round + 1),
     )
 
 
@@ -302,5 +275,6 @@ if __name__ == "__main__":
 
     for values, target_sum in examples:
         answer = quantum_subset_sum(values, target_sum, verbose=True)
-        print("\nanswer:", answer)
+        print()
+        print("answer:", answer)
         print("-" * 60)
